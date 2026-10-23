@@ -126,6 +126,8 @@
                 AutomationProperties.Name="{x:Bind domain:Translator.Companion_MonthCalendar, Mode=OneTime}"
                 Background="Transparent"
                 BorderThickness="0"
+                CalendarItemCornerRadius="{StaticResource ControlCornerRadius}"
+                CalendarViewDayItemChanging="MonthCalendar_CalendarViewDayItemChanging"
                 IsTodayHighlighted="True"
                 SelectedDatesChanged="MonthCalendar_SelectedDatesChanged"
                 SelectionMode="Single" />
@@ -196,47 +198,69 @@
                         Visibility="{x:Bind ViewModel.DayEventsVisibility, Mode=OneWay}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="companion:CompanionDayEvent">
-                                <Button
-                                    Margin="0,1"
-                                    Padding="8,6"
-                                    HorizontalAlignment="Stretch"
-                                    HorizontalContentAlignment="Stretch"
-                                    AutomationProperties.AutomationId="CompanionDayEventButton"
-                                    AutomationProperties.Name="{x:Bind Title}"
-                                    Click="DayEvent_Click"
-                                    CommandParameter="{x:Bind}"
-                                    Style="{ThemeResource SubtleButtonStyle}">
-                                    <Grid ColumnSpacing="10">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="4" />
-                                            <ColumnDefinition Width="92" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <Rectangle
-                                            Fill="{x:Bind helpers:XamlHelpers.GetSolidColorBrushFromHex(ColorHex)}"
-                                            RadiusX="2"
-                                            RadiusY="2" />
-                                        <TextBlock
-                                            Grid.Column="1"
-                                            VerticalAlignment="Center"
-                                            FontSize="12"
-                                            Foreground="{ThemeResource CompanionSecondaryTextBrush}"
-                                            Text="{x:Bind TimeText}"
-                                            TextTrimming="CharacterEllipsis" />
-                                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                                            <TextBlock
-                                                FontWeight="SemiBold"
-                                                Text="{x:Bind Title}"
-                                                TextTrimming="CharacterEllipsis" />
-                                            <TextBlock
-                                                FontSize="11.5"
-                                                Foreground="{ThemeResource CompanionTertiaryTextBrush}"
-                                                Text="{x:Bind Location}"
-                                                TextTrimming="CharacterEllipsis"
-                                                Visibility="{x:Bind helpers:XamlHelpers.BoolToVisibilityConverter(HasLocation)}" />
-                                        </StackPanel>
-                                    </Grid>
-                                </Button>
+                                <!--
+                                    A card per event: calendar color on the left, the title, then time and location.
+                                    The join button lies over the card, not inside it, so each button has its own click.
+                                -->
+                                <Grid Margin="0,3">
+                                    <Button
+                                        Padding="0"
+                                        HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Stretch"
+                                        AutomationProperties.AutomationId="CompanionDayEventButton"
+                                        AutomationProperties.Name="{x:Bind Title}"
+                                        Background="{ThemeResource CompanionCardBackgroundBrush}"
+                                        Click="DayEvent_Click"
+                                        CommandParameter="{x:Bind}"
+                                        CornerRadius="{StaticResource ControlCornerRadius}"
+                                        Style="{ThemeResource SubtleButtonStyle}">
+                                        <Border
+                                            Padding="{x:Bind helpers:XamlHelpers.GetCompanionDayEventPadding(HasJoinLink)}"
+                                            BorderBrush="{x:Bind helpers:XamlHelpers.GetSolidColorBrushFromHex(ColorHex)}"
+                                            BorderThickness="3,0,0,0"
+                                            CornerRadius="{StaticResource ControlCornerRadius}">
+                                            <StackPanel Spacing="1">
+                                                <TextBlock
+                                                    FontWeight="SemiBold"
+                                                    Text="{x:Bind Title}"
+                                                    TextTrimming="CharacterEllipsis" />
+                                                <Grid ColumnSpacing="8">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock
+                                                        FontSize="12"
+                                                        Foreground="{ThemeResource CompanionSecondaryTextBrush}"
+                                                        Text="{x:Bind TimeText}" />
+                                                    <TextBlock
+                                                        Grid.Column="1"
+                                                        FontSize="12"
+                                                        Foreground="{ThemeResource CompanionTertiaryTextBrush}"
+                                                        Text="{x:Bind Location}"
+                                                        TextTrimming="CharacterEllipsis"
+                                                        Visibility="{x:Bind helpers:XamlHelpers.BoolToVisibilityConverter(HasLocation)}" />
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+                                    </Button>
+                                    <Button
+                                        Width="32"
+                                        Height="32"
+                                        Margin="0,0,6,0"
+                                        Padding="0"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        AutomationProperties.AutomationId="CompanionDayEventJoinButton"
+                                        AutomationProperties.Name="{x:Bind domain:Translator.CalendarItem_DetailsPopup_JoinOnline}"
+                                        Click="DayEventJoin_Click"
+                                        CommandParameter="{x:Bind}"
+                                        Style="{ThemeResource SubtleButtonStyle}"
+                                        ToolTipService.ToolTip="{x:Bind domain:Translator.CalendarItem_DetailsPopup_JoinOnline}"
+                                        Visibility="{x:Bind helpers:XamlHelpers.BoolToVisibilityConverter(HasJoinLink)}">
+                                        <coreControls:MailCalFontIcon FontSize="16" Icon="EventJoinOnline" />
+                                    </Button>
+                                </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>

@@ -84,6 +84,25 @@ public static partial class CalendarJoinLinkResolver
         return false;
     }
 
+    /// <summary>
+    /// The online meeting link of <paramref name="calendarItem"/> only. Unlike <see cref="TryGetEffectiveJoinUri"/>,
+    /// this never falls back to the event's web page at the provider.
+    /// </summary>
+    public static bool TryGetMeetingJoinUri(CalendarItem calendarItem, out Uri uri)
+    {
+        uri = null;
+
+        if (calendarItem == null ||
+            !Uri.TryCreate(calendarItem.DirectJoinLink, UriKind.Absolute, out var directUri) ||
+            !(IsHttpUri(directUri) || VideoConferenceService.TryGetService(directUri, out _)))
+        {
+            return false;
+        }
+
+        uri = UnwrapSafeLink(directUri);
+        return true;
+    }
+
     private static bool TryCreateStructuredUri(string value, out Uri uri)
     {
         uri = null;

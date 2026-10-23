@@ -1,11 +1,14 @@
 ﻿using System;
 using System.ComponentModel;
 using System.Threading.Tasks;
+using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Windows.System;
+using Windows.UI;
+using MailCal.Helpers;
 using MailCal.Mail.WinUI.Services.Companion;
 
 namespace MailCal.Mail.WinUI.Controls.Companion;
@@ -22,7 +25,12 @@ public sealed partial class CompanionFlyoutView : UserControl
         InitializeComponent();
 
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
-        Loaded += (_, _) => SyncCalendarSelection();
+        ViewModel.DayIndicatorsChanged += (_, _) => ApplyDayIndicators();
+        Loaded += (_, _) =>
+        {
+            SyncFirstDayOfWeek();
+            SyncCalendarSelection();
+        };
     }
 
     public CompanionDashboardViewModel ViewModel { get; }
@@ -42,6 +50,16 @@ public sealed partial class CompanionFlyoutView : UserControl
     {
         if (e.PropertyName == nameof(ViewModel.SelectedDate))
             SyncCalendarSelection();
+        else if (e.PropertyName == nameof(ViewModel.FirstDayOfWeek))
+            SyncFirstDayOfWeek();
+    }
+
+    // Windows.Globalization.DayOfWeek uses the same values as System.DayOfWeek.
+    private void SyncFirstDayOfWeek()
+    {
+        var firstDayOfWeek = (Windows.Globalization.DayOfWeek)(int)ViewModel.FirstDayOfWeek;
+        if (MonthCalendar.FirstDayOfWeek != firstDayOfWeek)
+            MonthCalendar.FirstDayOfWeek = firstDayOfWeek;
     }
 
     private void MonthCalendar_SelectedDatesChanged(CalendarView sender, CalendarViewSelectedDatesChangedEventArgs args)
@@ -79,6 +97,58 @@ public sealed partial class CompanionFlyoutView : UserControl
         }
     }
 
+    private void MonthCalendar_CalendarViewDayItemChanging(CalendarView sender, CalendarViewDayItemChangingEventArgs args)
+    {
+        if (args.InRecycleQueue)
+            return;
+
+        ViewModel.EnsureDayIndicators(args.Item.Date.Date);
+        SetDayIndicator(args.Item);
+    }
+
+    // CalendarView raises CalendarViewDayItemChanging only when it realizes a day, so new event data
+    // is applied to the days it already shows.
+    private void ApplyDayIndicators()
+    {
+        foreach (var dayItem in MonthCalendar.FindDescendants<CalendarViewDayItem>())
+            SetDayIndicator(dayItem);
+    }
+
+    // The density bar at the top of a day shows one segment per event color.
+    private void SetDayIndicator(CalendarViewDayItem dayItem)
+    {
+        var colorHexes = ViewModel.GetDayIndicatorColors(dayItem.Date.Date);
+        if (colorHexes.Length == 0)
+        {
+            dayItem.SetDensityColors(null);
+            return;
+        }
+
+        var colors = new Color[colorHexes.Length];
+        for (var index = 0; index < colorHexes.Length; index++)
+            colors[index] = ToIndicatorColor(colorHexes[index]);
+
+        dayItem.SetDensityColors(colors);
+    }
+
+    private static Color ToIndicatorColor(string colorHex)
+    {
+        if (!string.IsNullOrWhiteSpace(colorHex))
+        {
+            try
+            {
+                return XamlHelpers.GetWindowsColorFromHex(colorHex);
+            }
+            catch (FormatException)
+            {
+            }
+        }
+
+        return Application.Current.Resources.TryGetValue("SystemAccentColor", out var accent) && accent is Color accentColor
+            ? accentColor
+            : Colors.Gray;
+    }
+
     private void QuickTitleBox_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key != VirtualKey.Enter)
@@ -105,6 +175,11 @@ public sealed partial class CompanionFlyoutView : UserControl
         => await ExecuteCommandAsync(
             sender,
             static (viewModel, parameter) => viewModel.OpenCalendarEventCommand.ExecuteAsync((MailCal.Mail.ViewModels.Companion.CompanionDayEvent)parameter));
+
+    private async void DayEventJoin_Click(object sender, RoutedEventArgs e)
+        => await ExecuteCommandAsync(
+            sender,
+            static (viewModel, parameter) => viewModel.JoinOnlineCommand.ExecuteAsync((MailCal.Mail.ViewModels.Companion.CompanionDayEvent)parameter));
 
     private async Task ExecuteCommandAsync(
         object sender,

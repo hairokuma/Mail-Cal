@@ -38,6 +38,12 @@ public partial class CompanionDashboardViewModel : ObservableObject, IDisposable
     private static readonly TimeSpan LatestQuickEnd = new(23, 59, 0);
     private static readonly TimeSpan OtherDayQuickStart = new(9, 0, 0);
 
+    /// <summary>The month calendar shows at most this many event colors per day.</summary>
+    private const int MaxDayIndicatorColors = 3;
+
+    /// <summary>When widening the loaded period would exceed this many months, it restarts around the requested day.</summary>
+    private const int MaxLoadedMonths = 12;
+
     private readonly IServiceProvider _services;
     private readonly ICompanionActionHandler _actions;
     private readonly IMessenger _messenger;
@@ -49,6 +55,16 @@ public partial class CompanionDashboardViewModel : ObservableObject, IDisposable
     private long _generation;
     private bool _recipientsRegistered;
     private bool _disposed;
+
+    // Events are loaded for a period of months around the shown month. The day list reads from it,
+    // and the month calendar marks the days that have events. The requested period can be wider than
+    // the loaded one while a reload is pending.
+    private DateTime _requestedStart;
+    private DateTime _requestedEnd;
+    private DateTime _loadedStart;
+    private DateTime _loadedEnd;
+    private List<CalendarItem> _loadedItems = [];
+    private Dictionary<DateTime, string[]> _dayIndicators = [];
 
     public CompanionDashboardViewModel(
         IServiceProvider services,
@@ -67,6 +83,9 @@ public partial class CompanionDashboardViewModel : ObservableObject, IDisposable
 
     /// <summary>Raised after the content was reloaded (successfully or not). Hosts may resize.</summary>
     public event EventHandler? ContentRefreshed;
+
+    /// <summary>Raised when the colors returned by <see cref="GetDayIndicatorColors"/> changed.</summary>
+    public event EventHandler? DayIndicatorsChanged;
 
     public ObservableCollection<CompanionDayEvent> DayEvents { get; } = [];
     public ObservableCollection<CompanionCalendarOption> WritableCalendars { get; } = [];
@@ -136,8 +155,33 @@ public partial class CompanionDashboardViewModel : ObservableObject, IDisposable
         ? "24HourClock"
         : "12HourClock";
 
+    /// <summary>The first day of the week from Settings > Calendar, otherwise the culture's.</summary>
+    public DayOfWeek FirstDayOfWeek => _calendarSettings?.FirstDayOfWeek
+                                       ?? CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
+
     /// <summary>True between <see cref="OpenAsync"/> and <see cref="Close"/>.</summary>
     public bool IsOpen => _recipientsRegistered;
+
+    /// <summary>
+    /// The colors of the first events on <paramref name="day"/>, one per calendar color, at most three.
+    /// An empty string stands for an event without a color. Empty when the day has no events.
+    /// </summary>
+    public string[] GetDayIndicatorColors(DateTime day)
+        => _dayIndicators.TryGetValue(day.Date, out var colors) ? colors : [];
+
+    /// <summary>
+    /// Called by the host for each day the month calendar shows. Loads the events around that day
+    /// when it is outside the loaded period, then raises <see cref="DayIndicatorsChanged"/>.
+    /// </summary>
+    public void EnsureDayIndicators(DateTime day)
+    {
+        day = day.Date;
+        if (SurfaceState != CompanionSurfaceState.Ready || IsRequested(day))
+            return;
+
+        RequestPeriodAround(day);
+        ScheduleRefresh();
+    }
 
     /// <summary>Loads the surface for the host's current readiness and follows changes until <see cref="Close"/>.</summary>
     public async Task OpenAsync(CompanionReadinessState readiness, CancellationToken cancellationToken)
@@ -148,7 +192,9 @@ public partial class CompanionDashboardViewModel : ObservableObject, IDisposable
         _visibilityCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         RegisterRecipients();
 
-        // Each opening starts on today.
+        // Each opening starts on today, with the events of the months around it.
+        _requestedStart = _requestedEnd = default;
+        RequestPeriodAround(DateTime.Today);
         if (SelectedDate != DateTime.Today)
             SelectedDate = DateTime.Today;
         else
@@ -184,7 +230,11 @@ public partial class CompanionDashboardViewModel : ObservableObject, IDisposable
     public async Task RefreshAsync(CancellationToken cancellationToken)
     {
         var generation = ++_generation;
-        var day = SelectedDate;
+        if (!IsRequested(SelectedDate))
+            RequestPeriodAround(SelectedDate);
+
+        var periodStart = _requestedStart;
+        var periodEnd = _requestedEnd;
 
         // Only the first load shows the progress state; later reloads keep the content in place.
         if (SurfaceState != CompanionSurfaceState.Ready)
@@ -207,13 +257,13 @@ public partial class CompanionDashboardViewModel : ObservableObject, IDisposable
             }
 
             var settings = _services.GetRequiredService<IPreferencesService>().GetCurrentCalendarSettings();
-            var (events, calendars) = await LoadDayAsync(accounts, day, settings, cancellationToken);
+            var (items, calendars) = await LoadPeriodAsync(accounts, periodStart, periodEnd, cancellationToken);
 
             cancellationToken.ThrowIfCancellationRequested();
             if (generation != _generation)
                 return;
 
-            await RunOnUIAsync(() => ApplyResults(settings, events, calendars));
+            await RunOnUIAsync(() => ApplyResults(settings, periodStart, periodEnd, items, calendars));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -235,18 +285,18 @@ public partial class CompanionDashboardViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Events of <paramref name="day"/> in every calendar the calendar page shows, and the writable
-    /// ones among those calendars.
+    /// Events between <paramref name="start"/> and <paramref name="end"/> in every calendar the calendar
+    /// page shows, without declined ones, and the writable calendars among those calendars.
     /// </summary>
-    private async Task<(List<CompanionDayEvent> Events, List<CompanionCalendarOption> Calendars)> LoadDayAsync(
+    private async Task<(List<CalendarItem> Items, List<CompanionCalendarOption> Calendars)> LoadPeriodAsync(
         IReadOnlyList<MailAccount> accounts,
-        DateTime day,
-        CalendarSettings settings,
+        DateTime start,
+        DateTime end,
         CancellationToken cancellationToken)
     {
         var calendarService = _services.GetRequiredService<ICalendarService>();
-        var period = new TimeRange(day, day.AddDays(1));
-        var loaded = new Dictionary<Guid, CompanionDayEvent>();
+        var period = new TimeRange(start, end);
+        var loaded = new Dictionary<Guid, CalendarItem>();
         var calendars = new List<CompanionCalendarOption>();
 
         foreach (var account in accounts)
@@ -270,25 +320,95 @@ public partial class CompanionDashboardViewModel : ObservableObject, IDisposable
                     if (await IsDeclinedAsync(calendarService, item, account))
                         continue;
 
-                    var viewModel = new CalendarItemViewModel(item) { DisplayingPeriod = period };
-                    loaded.Add(item.Id, new CompanionDayEvent(viewModel, day, settings));
+                    loaded.Add(item.Id, item);
                 }
             }
         }
 
-        var events = loaded.Values
-            .OrderByDescending(static row => row.IsAllDay)
-            .ThenBy(static row => row.Item.StartDate)
-            .ThenBy(static row => row.Item.EndDate)
-            .ThenBy(static row => row.Item.Id)
-            .ToList();
         var orderedCalendars = calendars
             .OrderByDescending(static option => option.Calendar.IsPrimary)
             .ThenBy(static option => option.AccountName, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(static option => option.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
 
-        return (events, orderedCalendars);
+        return ([.. loaded.Values], orderedCalendars);
+    }
+
+    /// <summary>The rows of the day list: all-day events first, then by time.</summary>
+    private static List<CompanionDayEvent> BuildDayEvents(IEnumerable<CalendarItem> items, DateTime day, CalendarSettings settings)
+    {
+        var dayEnd = day.AddDays(1);
+        var period = new TimeRange(day, dayEnd);
+
+        return items
+            .Where(item => Overlaps(item, day, dayEnd))
+            .Select(item => new CompanionDayEvent(new CalendarItemViewModel(item) { DisplayingPeriod = period }, day, settings))
+            .OrderByDescending(static row => row.IsAllDay)
+            .ThenBy(static row => row.Item.StartDate)
+            .ThenBy(static row => row.Item.EndDate)
+            .ThenBy(static row => row.Item.Id)
+            .ToList();
+    }
+
+    /// <summary>Every day between <paramref name="start"/> and <paramref name="end"/> with events, mapped to their first colors.</summary>
+    private static Dictionary<DateTime, string[]> BuildDayIndicators(IEnumerable<CalendarItem> items, DateTime start, DateTime end)
+    {
+        var colorsByDay = new Dictionary<DateTime, List<string>>();
+
+        foreach (var item in items.OrderBy(static item => item.LocalStartDate))
+        {
+            var first = item.LocalStartDate.Date < start ? start : item.LocalStartDate.Date;
+
+            // The end is exclusive: an event that ends at midnight does not mark the next day.
+            var last = item.LocalEndDate > item.LocalStartDate ? item.LocalEndDate.AddTicks(-1).Date : item.LocalStartDate.Date;
+            if (last >= end)
+                last = end.AddDays(-1);
+
+            var color = CompanionDayEvent.GetColorHex(item);
+            for (var day = first; day <= last; day = day.AddDays(1))
+            {
+                if (!colorsByDay.TryGetValue(day, out var colors))
+                    colorsByDay[day] = colors = [];
+
+                if (colors.Count < MaxDayIndicatorColors && !colors.Contains(color, StringComparer.OrdinalIgnoreCase))
+                    colors.Add(color);
+            }
+        }
+
+        return colorsByDay.ToDictionary(static pair => pair.Key, static pair => pair.Value.ToArray());
+    }
+
+    private static bool Overlaps(CalendarItem item, DateTime start, DateTime end)
+        => item.LocalStartDate < end &&
+           (item.LocalEndDate > start || (item.LocalEndDate <= item.LocalStartDate && item.LocalStartDate >= start));
+
+    private bool IsRequested(DateTime day) => day >= _requestedStart && day < _requestedEnd;
+
+    private bool IsLoaded(DateTime day) => day >= _loadedStart && day < _loadedEnd;
+
+    /// <summary>
+    /// Widens the requested period to the month of <paramref name="day"/> and one month on each side.
+    /// When that would cover more than <see cref="MaxLoadedMonths"/>, the period restarts around the day.
+    /// </summary>
+    private void RequestPeriodAround(DateTime day)
+    {
+        var month = new DateTime(day.Year, day.Month, 1);
+        var start = month.AddMonths(-1);
+        var end = month.AddMonths(2);
+
+        if (_requestedEnd > _requestedStart)
+        {
+            var widenedStart = start < _requestedStart ? start : _requestedStart;
+            var widenedEnd = end > _requestedEnd ? end : _requestedEnd;
+            if (widenedEnd <= widenedStart.AddMonths(MaxLoadedMonths))
+            {
+                start = widenedStart;
+                end = widenedEnd;
+            }
+        }
+
+        _requestedStart = start;
+        _requestedEnd = end;
     }
 
     private static async Task<bool> IsDeclinedAsync(ICalendarService calendarService, CalendarItem item, MailAccount account)
@@ -301,11 +421,18 @@ public partial class CompanionDashboardViewModel : ObservableObject, IDisposable
 
     private void ApplyResults(
         CalendarSettings settings,
-        IReadOnlyList<CompanionDayEvent> events,
+        DateTime periodStart,
+        DateTime periodEnd,
+        List<CalendarItem> items,
         IReadOnlyList<CompanionCalendarOption> calendars)
     {
         _calendarSettings = settings;
-        Replace(DayEvents, events);
+        _loadedStart = periodStart;
+        _loadedEnd = periodEnd;
+        _loadedItems = items;
+        _dayIndicators = BuildDayIndicators(items, periodStart, periodEnd);
+        Replace(DayEvents, BuildDayEvents(items, SelectedDate, settings));
+        DayIndicatorsChanged?.Invoke(this, EventArgs.Empty);
 
         var selectedId = SelectedQuickCalendar?.Id;
         Replace(WritableCalendars, calendars);
@@ -315,6 +442,7 @@ public partial class CompanionDashboardViewModel : ObservableObject, IDisposable
         ErrorText = string.Empty;
         RaiseContentProperties();
         OnPropertyChanged(nameof(ClockIdentifier));
+        OnPropertyChanged(nameof(FirstDayOfWeek));
         SurfaceState = CompanionSurfaceState.Ready;
     }
 
@@ -323,6 +451,10 @@ public partial class CompanionDashboardViewModel : ObservableObject, IDisposable
         DayEvents.Clear();
         WritableCalendars.Clear();
         SelectedQuickCalendar = null;
+        _loadedStart = _loadedEnd = default;
+        _loadedItems = [];
+        _dayIndicators = [];
+        DayIndicatorsChanged?.Invoke(this, EventArgs.Empty);
         RaiseContentProperties();
     }
 
@@ -348,8 +480,20 @@ public partial class CompanionDashboardViewModel : ObservableObject, IDisposable
         }
 
         ResetQuickTimes();
-        if (SurfaceState == CompanionSurfaceState.Ready)
-            ScheduleRefresh(immediately: true);
+        if (SurfaceState != CompanionSurfaceState.Ready)
+            return;
+
+        // A day inside the loaded period is shown from the loaded events without a reload.
+        if (IsLoaded(value) && IsRequested(value) && _calendarSettings is { } settings)
+        {
+            Replace(DayEvents, BuildDayEvents(_loadedItems, value, settings));
+            RaiseContentProperties();
+            ContentRefreshed?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        RequestPeriodAround(value);
+        ScheduleRefresh(immediately: true);
     }
 
     /// <summary>
@@ -469,6 +613,12 @@ public partial class CompanionDashboardViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private Task OpenCalendarEventAsync(CompanionDayEvent dayEvent)
         => ExecuteNavigationAsync(token => _actions.OpenCalendarEventAsync(dayEvent.Item, token));
+
+    [RelayCommand]
+    private Task JoinOnlineAsync(CompanionDayEvent dayEvent)
+        => dayEvent.JoinUri is { } joinUri
+            ? ExecuteNavigationAsync(token => _actions.JoinOnlineAsync(joinUri, token))
+            : Task.CompletedTask;
 
     private bool CanOpenEventEditor() => SurfaceState == CompanionSurfaceState.Ready;
 

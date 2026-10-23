@@ -33,6 +33,11 @@ public sealed class CompanionActionHandler(
 
     public Task OpenSettingsAsync(CancellationToken cancellationToken) => navigation.OpenSettings(cancellationToken);
 
+    public async Task JoinOnlineAsync(Uri joinUri, CancellationToken cancellationToken)
+        => (await services.GetRequiredService<IExternalLauncher>()
+            .LaunchUriAsync(joinUri, cancellationToken)
+            .ConfigureAwait(false)).ThrowIfNotSucceeded();
+
     public async Task CreateQuickEventAsync(CompanionEventDraft draft, CancellationToken cancellationToken)
     {
         // Re-read the calendar: it may have been removed or turned read-only since the form was filled.

@@ -124,6 +124,9 @@ public static class XamlHelpers
     public static Visibility ReverseBoolToVisibilityConverter(bool value) => value ? Visibility.Collapsed : Visibility.Visible;
     public static Visibility BoolToVisibilityConverter(bool value) => value ? Visibility.Visible : Visibility.Collapsed;
     public static Thickness GetCalendarPaneItemMargin(bool isPaneCompact) => isPaneCompact ? new Thickness(0) : new Thickness(8, 0, 8, 0);
+
+    // The right padding keeps the text clear of the join button that lies over the card.
+    public static Thickness GetCompanionDayEventPadding(bool hasJoinLink) => new(10, 6, hasJoinLink ? 44 : 10, 7);
     public static Visibility ReverseVisibilityConverter(Visibility visibility) => visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
     public static bool ReverseBoolConverter(bool value) => !value;
     public static GridLength DoubleToGridLength(double value) => new(value);
