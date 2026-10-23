@@ -122,6 +122,42 @@ public static class CalendarXamlHelpers
         return $"{calendarItemViewModel.Period.Start.ToString("d", settings.CultureInfo)} ({Translator.CalendarItemAllDay})";
     }
 
+    public static string GetDetailsPopupDateString(CalendarItemViewModel calendarItemViewModel, CalendarSettings settings)
+    {
+        if (calendarItemViewModel == null || settings == null) return string.Empty;
+
+        if (!calendarItemViewModel.IsAllDayEvent) return GetEventDetailsDateString(calendarItemViewModel, settings);
+
+        // All-day events end at midnight after their last day.
+        var start = calendarItemViewModel.Period.Start.Date;
+        var lastDay = calendarItemViewModel.Period.End.Date.AddDays(-1);
+        var dateRange = lastDay > start
+            ? $"{start.ToString("D", settings.CultureInfo)} – {lastDay.ToString("D", settings.CultureInfo)}"
+            : start.ToString("D", settings.CultureInfo);
+
+        return $"{dateRange} ({Translator.CalendarItemAllDay})";
+    }
+
+    // Occurrences carry no rule of their own, so they fall back to a plain "Recurring" label.
+    public static string GetDetailsPopupRecurrenceString(CalendarItemViewModel calendarItemViewModel, CalendarSettings settings)
+    {
+        var recurrence = GetRecurrenceString(calendarItemViewModel, settings);
+        return string.IsNullOrWhiteSpace(recurrence) ? Translator.CalendarEventCompose_Recurring : recurrence;
+    }
+
+    public static string GetOrganizerText(CalendarItemViewModel calendarItemViewModel)
+    {
+        var calendarItem = calendarItemViewModel?.CalendarItem;
+        if (calendarItem == null) return string.Empty;
+
+        return string.IsNullOrWhiteSpace(calendarItem.OrganizerDisplayName)
+            ? calendarItem.OrganizerEmail ?? string.Empty
+            : calendarItem.OrganizerDisplayName;
+    }
+
+    public static Microsoft.UI.Xaml.Visibility GetOrganizerVisibility(CalendarItemViewModel calendarItemViewModel)
+        => XamlHelpers.TextToVisibility(GetOrganizerText(calendarItemViewModel));
+
     public static PopupPlacementMode GetDesiredPlacementModeForEventsDetailsPopup(
         CalendarItemViewModel calendarItemViewModel,
         CalendarDisplayType calendarDisplayType)

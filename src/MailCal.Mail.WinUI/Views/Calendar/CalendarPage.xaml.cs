@@ -10,11 +10,13 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using Windows.Foundation;
 using MailCal.Core.Domain;
 using MailCal.Core.Domain.Enums;
 using MailCal.Calendar.Controls;
+using MailCal.Calendar.ViewModels.Data;
 using MailCal.Calendar.Views.Abstract;
 using MailCal.Core.Domain.Entities.Calendar;
 using MailCal.Core.Domain.Models.Calendar;
@@ -36,6 +38,7 @@ public sealed partial class CalendarPage : CalendarPageAbstract, ITitleBarSearch
     private long _calendarTypeSelectorChangedToken;
     private bool _suppressSelectionResetOnPopupClose;
     private bool _hasAttachedNavigationLifetimeEvents;
+    private CalendarItemControl? _lastTappedItemControl;
 
     public ObservableCollection<TitleBarSearchSuggestion> SearchSuggestions { get; } = [];
     public SearchBarMode SearchMode => SearchBarMode.Calendar;
@@ -46,11 +49,13 @@ public sealed partial class CalendarPage : CalendarPageAbstract, ITitleBarSearch
     {
         InitializeComponent();
         RefreshCalendarToolbar();
+        CalendarSurface.AddHandler(TappedEvent, new TappedEventHandler(CalendarSurfaceTapped), true);
     }
 
     protected override void OnNavigatingFrom(NavigatingCancelEventArgs e)
     {
         CloseQuickEventPopup(clearSelection: true);
+        EventDetailsFlyout.Hide();
         base.OnNavigatingFrom(e);
     }
 
@@ -204,6 +209,67 @@ public sealed partial class CalendarPage : CalendarPageAbstract, ITitleBarSearch
         ViewModel.DisplayDetailsCalendarItemViewModel = null;
     }
 
+    // The item control delays its tap message to tell single from double taps, so remember the
+    // tapped control here and anchor the details popup to it once the view model asks for it.
+    [DynamicWindowsRuntimeCast(typeof(DependencyObject))]
+    private void CalendarSurfaceTapped(object sender, TappedRoutedEventArgs e)
+    {
+        var current = e.OriginalSource as DependencyObject;
+
+        while (current is not null && current != CalendarSurface)
+        {
+            if (current is CalendarItemControl itemControl)
+            {
+                _lastTappedItemControl = itemControl;
+                return;
+            }
+
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        _lastTappedItemControl = null;
+    }
+
+    private void ViewModelEventDetailsRequested(object? sender, CalendarItemViewModel calendarItemViewModel)
+    {
+        var anchor = _lastTappedItemControl;
+        _lastTappedItemControl = null;
+
+        if (anchor?.CalendarItem != calendarItemViewModel || anchor.XamlRoot == null)
+            return;
+
+        CloseQuickEventPopup(clearSelection: true);
+
+        var placement = calendarItemViewModel.IsAllDayEvent || calendarItemViewModel.IsMultiDayEvent ||
+            ViewModel.CurrentVisibleRange?.DisplayType == CalendarDisplayType.Month
+            ? FlyoutPlacementMode.Bottom
+            : FlyoutPlacementMode.Right;
+
+        EventDetailsFlyout.ShowAt(anchor, new FlyoutShowOptions { Placement = placement });
+    }
+
+    private void EventDetailsViewEventClicked(object sender, RoutedEventArgs e)
+    {
+        EventDetailsFlyout.Hide();
+        ViewModel.NavigateEventDetailsCommand.Execute(null);
+    }
+
+    private void EventDetailsViewSeriesClicked(object sender, RoutedEventArgs e)
+    {
+        EventDetailsFlyout.Hide();
+        ViewModel.NavigateSeriesCommand.Execute(null);
+    }
+
+    private void EventDetailsJoinOnlineClicked(object sender, RoutedEventArgs e)
+    {
+        EventDetailsFlyout.Hide();
+
+        if (ViewModel.JoinOnlineCommand.CanExecute(null))
+        {
+            ViewModel.JoinOnlineCommand.Execute(null);
+        }
+    }
+
     private async void CalendarSurfaceCalendarItemDropped(object sender, CalendarItemDroppedEventArgs e)
         => await ViewModel.MoveCalendarItemAsync(e.CalendarItemViewModel, e.TargetStart);
 
@@ -302,6 +368,12 @@ public sealed partial class CalendarPage : CalendarPageAbstract, ITitleBarSearch
         else if (e.PropertyName == nameof(ViewModel.IsCalendarModeReady) && !ViewModel.IsCalendarModeReady)
         {
             CloseQuickEventPopup(clearSelection: true);
+            EventDetailsFlyout.Hide();
+        }
+        else if (e.PropertyName == nameof(ViewModel.DisplayDetailsCalendarItemViewModel) &&
+                 ViewModel.DisplayDetailsCalendarItemViewModel == null)
+        {
+            EventDetailsFlyout.Hide();
         }
     }
 
@@ -348,6 +420,7 @@ public sealed partial class CalendarPage : CalendarPageAbstract, ITitleBarSearch
         CalendarSurface.TodayRequested += CalendarSurfaceTodayRequested;
         CalendarSurface.ViewportPeriodChanged += CalendarSurfaceViewportPeriodChanged;
         ViewModel.PropertyChanged += ViewModelPropertyChanged;
+        ViewModel.EventDetailsRequested += ViewModelEventDetailsRequested;
         CalendarShellClient.PropertyChanged += CalendarShellClientPropertyChanged;
         CalendarShellClient.StatePersistenceService.StatePropertyChanged += CalendarStatePersistenceServiceChanged;
         _hasAttachedNavigationLifetimeEvents = true;
@@ -361,6 +434,8 @@ public sealed partial class CalendarPage : CalendarPageAbstract, ITitleBarSearch
         }
 
         CloseQuickEventPopup(clearSelection: true);
+        EventDetailsFlyout.Hide();
+        _lastTappedItemControl = null;
         Bindings.StopTracking();
         CalendarToolbar.UnregisterSelectedTypeChanged(_calendarTypeSelectorChangedToken);
         CalendarToolbar.PreviousDateRequested -= CalendarToolbarPreviousDateRequested;
@@ -369,6 +444,7 @@ public sealed partial class CalendarPage : CalendarPageAbstract, ITitleBarSearch
         CalendarSurface.TodayRequested -= CalendarSurfaceTodayRequested;
         CalendarSurface.ViewportPeriodChanged -= CalendarSurfaceViewportPeriodChanged;
         ViewModel.PropertyChanged -= ViewModelPropertyChanged;
+        ViewModel.EventDetailsRequested -= ViewModelEventDetailsRequested;
         CalendarShellClient.PropertyChanged -= CalendarShellClientPropertyChanged;
         CalendarShellClient.StatePersistenceService.StatePropertyChanged -= CalendarStatePersistenceServiceChanged;
         _searchCancellationTokenSource?.Cancel();

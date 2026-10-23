@@ -203,14 +203,22 @@ public partial class CalendarPageViewModel : CalendarBaseViewModel,
 
     public event EventHandler DetailsShowCalendarItemChanged;
 
+    /// <summary>
+    /// Raised when a single tap asks to show the details popup for an event, including a tap on the already selected event.
+    /// </summary>
+    public event EventHandler<CalendarItemViewModel> EventDetailsRequested;
+
     public bool CanJoinOnline => CalendarJoinLinkResolver.TryGetEffectiveJoinUri(
         DisplayDetailsCalendarItemViewModel?.CalendarItem,
         out _);
+
+    public bool CanNavigateSeries => DisplayDetailsCalendarItemViewModel?.IsRecurringChild == true;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEventDetailsVisible))]
     [NotifyCanExecuteChangedFor(nameof(JoinOnlineCommand))]
     [NotifyPropertyChangedFor(nameof(CanJoinOnline))]
+    [NotifyPropertyChangedFor(nameof(CanNavigateSeries))]
     public partial CalendarItemViewModel DisplayDetailsCalendarItemViewModel { get; set; }
 
     public bool IsEventDetailsVisible => DisplayDetailsCalendarItemViewModel != null;
@@ -1090,7 +1098,10 @@ public partial class CalendarPageViewModel : CalendarBaseViewModel,
             return;
 
         await ExecuteUIThread(() =>
-            DisplayDetailsCalendarItemViewModel = message.CalendarItemViewModel);
+        {
+            DisplayDetailsCalendarItemViewModel = message.CalendarItemViewModel;
+            EventDetailsRequested?.Invoke(this, message.CalendarItemViewModel);
+        });
     }
 
     public async void Receive(CalendarItemDoubleTappedMessage message)

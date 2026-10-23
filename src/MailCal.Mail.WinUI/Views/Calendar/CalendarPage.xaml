@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:abstract="using:MailCal.Calendar.Views.Abstract"
     xmlns:calendarControls="using:MailCal.Calendar.Controls"
+    xmlns:calendarHelpers="using:MailCal.Calendar.Helpers"
     xmlns:controls="using:MailCal.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:data="using:MailCal.Calendar.ViewModels.Data"
@@ -11,6 +12,7 @@
     xmlns:helpers="using:MailCal.Helpers"
     xmlns:mailCalControls="using:MailCal.Mail.WinUI.Controls"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:primitives="using:Microsoft.UI.Xaml.Controls.Primitives"
     mc:Ignorable="d">
 
     <Grid>
@@ -31,6 +33,152 @@
             BorderThickness="1"
             CornerRadius="7"
             Visibility="{x:Bind helpers:XamlHelpers.ReverseBoolToVisibilityConverter(ViewModel.Readiness.IsBlocked), Mode=OneWay}">
+            <!--  Event details popup. Opened next to the tapped event; input passes through to the surface so a second click still opens the event.  -->
+            <primitives:FlyoutBase.AttachedFlyout>
+                <Flyout x:Name="EventDetailsFlyout" OverlayInputPassThroughElement="{x:Bind CalendarSurface}">
+                    <Flyout.FlyoutPresenterStyle>
+                        <Style BasedOn="{StaticResource DefaultFlyoutPresenterStyle}" TargetType="FlyoutPresenter">
+                            <Setter Property="Padding" Value="16" />
+                            <Setter Property="MaxWidth" Value="420" />
+                        </Style>
+                    </Flyout.FlyoutPresenterStyle>
+
+                    <Grid
+                        Width="360"
+                        AutomationProperties.AutomationId="CalendarEventDetailsPopup"
+                        ColumnSpacing="10"
+                        RowSpacing="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="20" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <!--  Title  -->
+                        <Border
+                            Width="4"
+                            HorizontalAlignment="Center"
+                            Background="{x:Bind helpers:XamlHelpers.GetSolidColorBrushFromHex(ViewModel.DisplayDetailsCalendarItemViewModel.AssignedCalendar.BackgroundColorHex), Mode=OneWay, TargetNullValue='LightGray'}"
+                            CornerRadius="2" />
+                        <TextBlock
+                            Grid.Column="1"
+                            IsTextSelectionEnabled="True"
+                            Style="{StaticResource SubtitleTextBlockStyle}"
+                            Text="{x:Bind ViewModel.DisplayDetailsCalendarItemViewModel.Title, Mode=OneWay}"
+                            TextWrapping="Wrap" />
+
+                        <!--  Date and time  -->
+                        <mailCalControls:MailCalFontIcon
+                            Grid.Row="1"
+                            VerticalAlignment="Top"
+                            FontSize="16"
+                            Icon="Clock" />
+                        <TextBlock
+                            Grid.Row="1"
+                            Grid.Column="1"
+                            Text="{x:Bind calendarHelpers:CalendarXamlHelpers.GetDetailsPopupDateString(ViewModel.DisplayDetailsCalendarItemViewModel, ViewModel.CurrentSettings), Mode=OneWay}"
+                            TextWrapping="Wrap" />
+
+                        <!--  Recurrence  -->
+                        <mailCalControls:MailCalFontIcon
+                            Grid.Row="2"
+                            VerticalAlignment="Top"
+                            FontSize="16"
+                            Icon="CalendarEventRepeat"
+                            Visibility="{x:Bind ViewModel.DisplayDetailsCalendarItemViewModel.IsRecurringEvent, Mode=OneWay, FallbackValue=Collapsed}" />
+                        <TextBlock
+                            Grid.Row="2"
+                            Grid.Column="1"
+                            Text="{x:Bind calendarHelpers:CalendarXamlHelpers.GetDetailsPopupRecurrenceString(ViewModel.DisplayDetailsCalendarItemViewModel, ViewModel.CurrentSettings), Mode=OneWay}"
+                            TextWrapping="Wrap"
+                            Visibility="{x:Bind ViewModel.DisplayDetailsCalendarItemViewModel.IsRecurringEvent, Mode=OneWay, FallbackValue=Collapsed}" />
+
+                        <!--  Location  -->
+                        <mailCalControls:MailCalFontIcon
+                            Grid.Row="3"
+                            VerticalAlignment="Top"
+                            FontSize="16"
+                            Icon="Location"
+                            Visibility="{x:Bind helpers:XamlHelpers.TextToVisibility(ViewModel.DisplayDetailsCalendarItemViewModel.Location), Mode=OneWay}" />
+                        <TextBlock
+                            Grid.Row="3"
+                            Grid.Column="1"
+                            IsTextSelectionEnabled="True"
+                            Text="{x:Bind ViewModel.DisplayDetailsCalendarItemViewModel.Location, Mode=OneWay}"
+                            TextWrapping="Wrap"
+                            Visibility="{x:Bind helpers:XamlHelpers.TextToVisibility(ViewModel.DisplayDetailsCalendarItemViewModel.Location), Mode=OneWay}" />
+
+                        <!--  Organizer  -->
+                        <mailCalControls:MailCalFontIcon
+                            Grid.Row="4"
+                            VerticalAlignment="Top"
+                            FontSize="16"
+                            Icon="Person"
+                            ToolTipService.ToolTip="{x:Bind domain:Translator.CalendarEventDetails_Organizer}"
+                            Visibility="{x:Bind calendarHelpers:CalendarXamlHelpers.GetOrganizerVisibility(ViewModel.DisplayDetailsCalendarItemViewModel), Mode=OneWay}" />
+                        <TextBlock
+                            Grid.Row="4"
+                            Grid.Column="1"
+                            AutomationProperties.HelpText="{x:Bind domain:Translator.CalendarEventDetails_Organizer}"
+                            IsTextSelectionEnabled="True"
+                            Text="{x:Bind calendarHelpers:CalendarXamlHelpers.GetOrganizerText(ViewModel.DisplayDetailsCalendarItemViewModel), Mode=OneWay}"
+                            TextWrapping="Wrap"
+                            Visibility="{x:Bind calendarHelpers:CalendarXamlHelpers.GetOrganizerVisibility(ViewModel.DisplayDetailsCalendarItemViewModel), Mode=OneWay}" />
+
+                        <!--  Calendar  -->
+                        <Ellipse
+                            Grid.Row="5"
+                            Width="12"
+                            Height="12"
+                            Margin="0,4,0,0"
+                            VerticalAlignment="Top"
+                            Fill="{x:Bind helpers:XamlHelpers.GetSolidColorBrushFromHex(ViewModel.DisplayDetailsCalendarItemViewModel.AssignedCalendar.BackgroundColorHex), Mode=OneWay, TargetNullValue='LightGray'}" />
+                        <TextBlock
+                            Grid.Row="5"
+                            Grid.Column="1"
+                            Text="{x:Bind ViewModel.DisplayDetailsCalendarItemViewModel.AssignedCalendar.Name, Mode=OneWay}"
+                            TextTrimming="CharacterEllipsis" />
+
+                        <!--  Actions  -->
+                        <StackPanel
+                            Grid.Row="6"
+                            Grid.ColumnSpan="2"
+                            Margin="0,6,0,0"
+                            HorizontalAlignment="Right"
+                            Orientation="Horizontal"
+                            Spacing="8">
+                            <Button
+                                AutomationProperties.AutomationId="CalendarEventDetailsPopupJoinButton"
+                                Click="EventDetailsJoinOnlineClicked"
+                                Visibility="{x:Bind ViewModel.CanJoinOnline, Mode=OneWay}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <mailCalControls:MailCalFontIcon FontSize="16" Icon="EventJoinOnline" />
+                                    <TextBlock VerticalAlignment="Center" Text="{x:Bind domain:Translator.CalendarItem_DetailsPopup_JoinOnline}" />
+                                </StackPanel>
+                            </Button>
+                            <Button
+                                AutomationProperties.AutomationId="CalendarEventDetailsPopupSeriesButton"
+                                Click="EventDetailsViewSeriesClicked"
+                                Content="{x:Bind domain:Translator.CalendarItem_DetailsPopup_ViewSeriesButton}"
+                                Visibility="{x:Bind ViewModel.CanNavigateSeries, Mode=OneWay}" />
+                            <Button
+                                AutomationProperties.AutomationId="CalendarEventDetailsPopupViewButton"
+                                Click="EventDetailsViewEventClicked"
+                                Content="{x:Bind domain:Translator.CalendarItem_DetailsPopup_ViewEventButton}"
+                                Style="{ThemeResource AccentButtonStyle}" />
+                        </StackPanel>
+                    </Grid>
+                </Flyout>
+            </primitives:FlyoutBase.AttachedFlyout>
+
             <calendarControls:CalendarPeriodControl
                 x:Name="CalendarSurface"
                 CalendarItemDropped="CalendarSurfaceCalendarItemDropped"
