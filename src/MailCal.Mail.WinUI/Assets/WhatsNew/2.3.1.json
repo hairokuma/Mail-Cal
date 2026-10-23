@@ -1,0 +1,21 @@
+{
+  "version": "2.3.1",
+  "isStarred": false,
+  "features": [
+    {
+      "image": "calendar-event-details.png",
+      "title": "Event details at a click",
+      "description": "Click an event in the calendar to see when and where it is, who organized it and which calendar it is in. Join an online meeting right from the popup, or choose View event to open it. Double-click still opens the event."
+    },
+    {
+      "image": "tray-calendar-event-dots.png",
+      "title": "See busy days in the tray",
+      "description": "The calendar in the taskbar tray now marks every day that has events with colored dots, one for each calendar color. Meetings with an online link get a Join button in the day list."
+    },
+    {
+      "image": "recipient-you-address.png",
+      "title": "Know which address got it",
+      "description": "When a message was sent to you, the recipients now show which of your addresses received it, such as \"You <alex@contoso.com>\". Helpful with linked inboxes, aliases and forwarding."
+    }
+  ]
+}
