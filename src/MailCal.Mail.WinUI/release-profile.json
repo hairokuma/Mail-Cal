@@ -1,0 +1,18 @@
+{
+  "Distribution": "Standalone",
+  "PackageName": "hairokuma.MailCal",
+  "Publisher": "CN=hairokuma",
+  "DisplayNames": {
+    "Mail": "Mail-Cal",
+    "Calendar": "Mail-Cal Calendar",
+    "People": "Mail-Cal People",
+    "Tasks": "Mail-Cal To Do"
+  },
+  "NotificationActivatorIds": {
+    "Mail": "b2a5406e-9637-4cc8-bade-960c31f999ff",
+    "Calendar": "ae42f6a9-b0b9-455a-80a2-9cd565658865",
+    "People": "a1cdd0d5-6caa-4bb6-9565-79e730d887ad",
+    "Tasks": "41c27c8b-0682-4050-9438-9ade1e20d0d4"
+  },
+  "StartupTaskActivatorId": "2eb07bbb-80e4-4abf-a3b0-6d73dafbf007"
+}
