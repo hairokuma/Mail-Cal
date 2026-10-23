@@ -1,0 +1,11 @@
+{
+  "version": "2.3.3",
+  "isStarred": false,
+  "features": [
+    {
+      "image": "original-app-icon.png",
+      "title": "The envelope icon is back",
+      "description": "Mail-Cal uses the blue envelope icon again in the taskbar, the tray, the Start menu and its tiles. If Windows still shows the old icon, unpin and pin Mail-Cal again or restart your PC."
+    }
+  ]
+}
