@@ -1,0 +1,11 @@
+{
+  "version": "2.3.2",
+  "isStarred": false,
+  "features": [
+    {
+      "image": "tray-calendar-event-dots.png",
+      "title": "Tray calendar opens again",
+      "description": "Clicking the Mail-Cal icon in the taskbar tray opens the calendar again, with colored dots for the days that have events. In 2.3.1 it showed \"Companion unavailable\" instead."
+    }
+  ]
+}
