@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Threading.Tasks;
 using Microsoft.UI;
@@ -10,6 +11,7 @@ using Windows.System;
 using Windows.UI;
 using MailCal.Helpers;
 using MailCal.Mail.WinUI.Services.Companion;
+using WinRT;
 
 namespace MailCal.Mail.WinUI.Controls.Companion;
 
@@ -124,9 +126,9 @@ public sealed partial class CompanionFlyoutView : UserControl
             return;
         }
 
-        var colors = new Color[colorHexes.Length];
-        for (var index = 0; index < colorHexes.Length; index++)
-            colors[index] = ToIndicatorColor(colorHexes[index]);
+        var colors = new DayIndicatorColorList();
+        foreach (var colorHex in colorHexes)
+            colors.Add(ToIndicatorColor(colorHex));
 
         dayItem.SetDensityColors(colors);
     }
@@ -196,3 +198,11 @@ public sealed partial class CompanionFlyoutView : UserControl
         }
     }
 }
+
+/// <summary>
+/// The colors passed to <see cref="CalendarViewDayItem.SetDensityColors"/>. Native AOT cannot marshal a
+/// <see cref="Color"/> array to WinRT (it has no IReferenceArray support), so the day item gets a concrete,
+/// WinRT-exposed list instead.
+/// </summary>
+[GeneratedWinRTExposedType]
+internal sealed partial class DayIndicatorColorList : List<Color>;
